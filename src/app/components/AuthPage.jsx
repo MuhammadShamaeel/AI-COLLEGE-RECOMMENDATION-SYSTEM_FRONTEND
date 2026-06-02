@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import { Eye, EyeOff, Mail, Lock, User, ArrowRight, Sparkles, Star, Zap, BookOpen, Award } from 'lucide-react';
-import { authAPI } from '../services/api';
+import { authAPI } from "../services/api";
 
 const TITLE = "EDUNOVA";
 
-/* Scanline sweep — a bright horizontal band that travels down the letter */
+/* Scanline sweep animation */
 function ScanSweep({ delay }) {
   return (
     <motion.span
@@ -147,17 +147,17 @@ function AnimatedTitle() {
 export default function AuthPage({ onAuth }) {
   const [mode, setMode] = useState('login');
   const [showPassword, setShowPassword] = useState(false);
-  const [form, setForm] = useState({ name: '', email: '', password: '', confirmPassword: '' });
+  const [form, setForm] = useState({ username: '', email: '', password: '', password2: '' });
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
 
   const validate = () => {
     const e = {};
-    if (mode === 'signup' && !form.name.trim()) e.name = 'Name is required';
+    if (mode === 'signup' && !form.username.trim()) e.username = 'Username is required';
     if (!form.email.includes('@')) e.email = 'Valid email required';
     if (form.password.length < 6) e.password = 'Password must be at least 6 characters';
-    if (mode === 'signup' && form.password !== form.confirmPassword) {
-      e.confirmPassword = 'Passwords do not match';
+    if (mode === 'signup' && form.password !== form.password2) {
+      e.password2 = 'Passwords do not match';
     }
     return e;
   };
@@ -175,71 +175,92 @@ export default function AuthPage({ onAuth }) {
 
     try {
       if (mode === 'login') {
+        console.log('Attempting login with:', form.email);
         const response = await authAPI.login({
           email: form.email,
           password: form.password,
         });
         
-        localStorage.setItem('access_token', response.data.access);
-        localStorage.setItem('refresh_token', response.data.refresh);
+        console.log('Login response:', response.data);
         
-        onAuth();
+        // Check if login was successful (status 200 and has tokens)
+        if (response.status === 200) {
+          // Store tokens if they exist
+          if (response.data.access && response.data.refresh) {
+            localStorage.setItem('access_token', response.data.access);
+            localStorage.setItem('refresh_token', response.data.refresh);
+          }
+          // Also store a simple auth flag
+          localStorage.setItem('isAuthenticated', 'true');
+          localStorage.setItem('userEmail', form.email);
+          console.log('Login successful');
+          onAuth();
+        } else {
+          setErrors({ general: 'Invalid email or password' });
+        }
       } else {
+        console.log('Attempting registration for:', form.email);
         const response = await authAPI.register({
-          username: form.name,
+          username: form.username,
           email: form.email,
           password: form.password,
-          password2: form.confirmPassword,
+          password2: form.password2,
         });
         
-        if (response.data.success) {
+        console.log('Register response:', response.data);
+        
+        if (response.status === 201 || response.data.success) {
+          // Auto login after successful registration
           const loginResponse = await authAPI.login({
             email: form.email,
             password: form.password,
           });
-          localStorage.setItem('access_token', loginResponse.data.access);
-          localStorage.setItem('refresh_token', loginResponse.data.refresh);
-          onAuth();
+          
+          if (loginResponse.status === 200) {
+            if (loginResponse.data.access && loginResponse.data.refresh) {
+              localStorage.setItem('access_token', loginResponse.data.access);
+              localStorage.setItem('refresh_token', loginResponse.data.refresh);
+            }
+            localStorage.setItem('isAuthenticated', 'true');
+            localStorage.setItem('userEmail', form.email);
+            console.log('Registration and login successful');
+            onAuth();
+          } else {
+            setErrors({ general: 'Registration successful but login failed. Please try logging in manually.' });
+          }
+        } else if (response.data.errors) {
+          setErrors(response.data.errors);
+        } else if (response.data.email) {
+          setErrors({ email: response.data.email });
+        } else if (response.data.username) {
+          setErrors({ username: response.data.username });
+        } else if (response.data.password) {
+          setErrors({ password: response.data.password });
+        } else {
+          setErrors({ general: response.data.message || response.data.detail || 'Registration failed' });
         }
       }
     } catch (error) {
       console.error('Auth error:', error);
+      console.error('Error details:', error.response?.data);
       
-      // Handle different error response formats
       if (error.response?.data) {
         const errorData = error.response.data;
         
-        // Check for different error formats
-        if (typeof errorData === 'object') {
-          // Handle field-specific errors (like in RegisterSerializer)
-          if (errorData.username || errorData.email || errorData.password || errorData.password2) {
-            setErrors(errorData);
-          }
-          // Handle non-field errors (like invalid credentials)
-          else if (errorData.detail) {
-            if (mode === 'login') {
-              setErrors({ general: 'Invalid email or password. Please try again.' });
-            } else {
-              setErrors({ general: errorData.detail });
-            }
-          }
-          // Handle error message string
-          else if (errorData.message) {
-            setErrors({ general: errorData.message });
-          }
-          // Handle any other error object
-          else if (Object.keys(errorData).length > 0) {
-            // Check if there's a non_field_errors array
-            if (errorData.non_field_errors && Array.isArray(errorData.non_field_errors)) {
-              setErrors({ general: errorData.non_field_errors[0] });
-            } else {
-              setErrors(errorData);
-            }
-          } else {
-            setErrors({ general: 'Authentication failed. Please try again.' });
-          }
-        } else if (typeof errorData === 'string') {
-          setErrors({ general: errorData });
+        if (errorData.errors) {
+          setErrors(errorData.errors);
+        } else if (errorData.username) {
+          setErrors({ username: Array.isArray(errorData.username) ? errorData.username[0] : errorData.username });
+        } else if (errorData.email) {
+          setErrors({ email: Array.isArray(errorData.email) ? errorData.email[0] : errorData.email });
+        } else if (errorData.password) {
+          setErrors({ password: Array.isArray(errorData.password) ? errorData.password[0] : errorData.password });
+        } else if (errorData.detail) {
+          setErrors({ general: errorData.detail });
+        } else if (errorData.message) {
+          setErrors({ general: errorData.message });
+        } else if (errorData.non_field_errors) {
+          setErrors({ general: errorData.non_field_errors[0] });
         } else {
           setErrors({ general: 'Authentication failed. Please try again.' });
         }
@@ -251,6 +272,13 @@ export default function AuthPage({ onAuth }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Demo login - bypass authentication for testing
+  const handleDemoLogin = () => {
+    localStorage.setItem('isAuthenticated', 'true');
+    localStorage.setItem('demoMode', 'true');
+    onAuth();
   };
 
   const features = [
@@ -414,20 +442,20 @@ export default function AuthPage({ onAuth }) {
                   transition={{ duration: 0.3 }}
                 >
                   <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5 uppercase tracking-wider" style={{ fontFamily: 'var(--font-primary)' }}>
-                    Full Name
+                    Username
                   </label>
                   <div className="relative">
                     <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--muted-foreground)]" />
                     <input
                       type="text"
-                      value={form.name}
-                      onChange={(e) => setForm({ ...form, name: e.target.value })}
-                      placeholder="Your full name"
+                      value={form.username}
+                      onChange={(e) => setForm({ ...form, username: e.target.value })}
+                      placeholder="Your username"
                       className="w-full pl-10 pr-4 py-3 rounded-xl bg-[var(--input-background)] border border-[var(--border)] text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)] transition-all text-sm"
                       style={{ fontFamily: 'var(--font-body)' }}
                     />
                   </div>
-                  {errors.name && <p className="text-red-400 text-xs mt-1">{errors.name}</p>}
+                  {errors.username && <p className="text-red-400 text-xs mt-1">{errors.username}</p>}
                 </motion.div>
               )}
 
@@ -487,14 +515,14 @@ export default function AuthPage({ onAuth }) {
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--muted-foreground)]" />
                     <input
                       type={showPassword ? 'text' : 'password'}
-                      value={form.confirmPassword}
-                      onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
+                      value={form.password2}
+                      onChange={(e) => setForm({ ...form, password2: e.target.value })}
                       placeholder="••••••••"
                       className="w-full pl-10 pr-4 py-3 rounded-xl bg-[var(--input-background)] border border-[var(--border)] text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-[var(--primary)] transition-all text-sm"
                       style={{ fontFamily: 'var(--font-body)' }}
                     />
                   </div>
-                  {errors.confirmPassword && <p className="text-red-400 text-xs mt-1">{errors.confirmPassword}</p>}
+                  {errors.password2 && <p className="text-red-400 text-xs mt-1">{errors.password2}</p>}
                 </motion.div>
               )}
 
@@ -516,6 +544,15 @@ export default function AuthPage({ onAuth }) {
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
+              </button>
+
+              {/* Demo Login Button */}
+              <button
+                type="button"
+                onClick={handleDemoLogin}
+                className="w-full py-3.5 rounded-xl border-2 border-[var(--primary)] text-[var(--neon-cyan)] font-semibold flex items-center justify-center gap-2 hover:bg-[var(--primary)]/10 transition-all duration-200 text-sm"
+              >
+                Continue as Guest (Demo)
               </button>
             </form>
 

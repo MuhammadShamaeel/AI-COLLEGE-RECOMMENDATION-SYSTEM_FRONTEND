@@ -1,7 +1,6 @@
 import { motion } from 'motion/react';
 
-
-export default function Hero({ onOpenChat }) {
+export default function Hero({ onOpenChat, onExplore }) {
   return (
     <div className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden">
       <div className="absolute inset-0 cyber-grid opacity-30"></div>
@@ -65,9 +64,7 @@ export default function Hero({ onOpenChat }) {
           className="flex gap-6 justify-center flex-wrap"
         >
           <button
-            onClick={() => {
-              document.getElementById('search-section')?.scrollIntoView({ behavior: 'smooth' });
-            }}
+            onClick={onExplore}
             className="px-8 py-4 rounded-xl bg-gradient-to-r from-[var(--primary)] to-[var(--secondary)] text-white font-semibold text-lg hover:shadow-2xl hover:scale-105 transition-all duration-300 backdrop-blur-sm"
             style={{
               boxShadow: '0 0 40px rgba(139, 92, 246, 0.4)',
